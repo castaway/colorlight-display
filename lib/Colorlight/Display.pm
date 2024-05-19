@@ -38,7 +38,7 @@ sub detect($self) {
     my $eth = Net::Frame::Layer::ETH->new(
 	src => $self->src_mac,
 	dst => $self->dst_mac,
-	type => 0x700
+	type => 0x700,
 	);
     $eth->payload(chr(0) x 270);
     $eth->pack();
@@ -49,6 +49,7 @@ sub detect($self) {
 	dev => $self->dev,
 #	onRecv => \&capture,
 	#	onRecvCount => 5
+	promisc => 1,
 	);
     $dumper->start;
 
@@ -67,7 +68,7 @@ sub detect($self) {
 	    my $timestamp      = $f->{timestamp};
 	    my $layer = Net::Frame::Layer::ETH->new(raw => $raw);
 
-	    say $layer->type;
+	    printf("type: 0x%x\n", $layer->type);
 	    say $layer->print;
 	}
     }
@@ -138,6 +139,48 @@ sub send_0101($self) {
 }
 
 sub send_image($self, $image) {
+    $self->send_0101;
+    $self->set_brightness();
+    
+    for(my $y = 0; $y < $self->rows; $y++) {
+	my $eth = Net::Frame::Layer::ETH->new(
+	    src => $self->src_mac,
+	    dst => $self->dst_mac,
+	    type => 0x5500,
+	    );
+	my @payload = ($y, 0, 0, $self->cols >> 8, $self->cols & 0xFF, 0x08, 0x88);
+	for (my $x = 0; $x < $self->cols; $x++) {
+	    # say "$x, $y";
+	    my ($pixel) = $image->getpixel(x=>$x, y=>$y);
+	    my ($r, $g, $b, $a);
+	    if ($pixel) {
+		($r, $g, $b, $a) = $pixel->rgba;
+	    } else {
+		($r, $g, $b, $a) = (0, 0, 0, 1);
+	    }
+	    if ($image->getchannels() == 1) {
+		$g=$r;
+		$b=$r;
+	    }
+	    # our display is bgr instead of rgb.  Annoying, no?
+	    $payload[7 + 3*$x + 0] = $b;
+	    $payload[7 + 3*$x + 1] = $g;
+	    $payload[7 + 3*$x + 2] = $r;
+	}
+	$eth->payload(join('', map {chr $_} @payload));
+	$eth->pack();
+	say "Payload len " . $eth->getPayloadLength();
+	say $eth->dump;
+	my $writer = Net::Write::Layer2->new( dev => $self->dev );
+	my $simple = Net::Frame::Simple->new( layers => [ $eth ] );
+
+	$writer->open();
+	$simple->send($writer);
+	$writer->close();    
+    }
+    sleep 0.02;
+    
+    $self->send_0107();
 }
 
 sub send_color {

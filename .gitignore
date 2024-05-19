@@ -1,0 +1,10 @@
+# emacs save files
+*~
+
+# pcap/dump files:
+*.pcap
+*.storable
+
+# perl libs:
+local/
+
